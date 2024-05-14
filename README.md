@@ -1,4 +1,4 @@
-# <web-app-template>
+# \<web-app-template\>
 
 First find a clear name for your app, and replace the header of this section!
 
