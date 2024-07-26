@@ -35,7 +35,7 @@ MY_APP_DB_NAME=<DB NAME>
 The app should store its data in the container /data folder, that means that it has to be configurable with an option or a environement variable when the app is started. The /data folder will be mounted from the host inside the container and it will be possible to backup its content. 
 
 ## Some considerations for sysadmin deploying the app:
-
+### Deplpoying the container 
 Onece the conainer ready, it needs to be deployed on the webapp vm. You can use this template to deploy it with systemd:
 ```service 
 [Unit]
@@ -91,3 +91,49 @@ podman ps
 b0e789e48db0  quay.io/c3genomics/parpal:latest                                10 hours ago  Up 10 hours  0.0.0.0:8001->8000/tcp  PARPAL
 613c454b4fec  docker.io/sosedoff/pgweb:0.15.0                                 7 hours ago   Up 7 hours   0.0.0.0:8081->8081/tcp  pg-web
 ```
+### Adding a route to the nginx server
+
+On the web proxy, the configuration are all in `/etc/nginx/conf.d`. You can create a server directly use the * certificate valid for all the `*.c3g-app.sd4h.ca` adresses installed on the system, for example, for <my new app>:
+
+```
+server {
+     listen 80 ;
+     server_name <my new app>.c3g-app.sd4h.ca;
+     return 301 https://<my new app>.c3g-app.sd4h.ca$request_uri;
+
+}
+
+server {
+  listen 443 ssl;
+  server_name <my new app>.c3g-app.sd4h.ca;
+
+  ssl_certificate /etc/letsencrypt/live/c3g-app.sd4h.ca/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/c3g-app.sd4h.ca/privkey.pem;
+
+  
+
+
+  location / {
+ 	proxy_set_header    Host $host;
+    	proxy_set_header    X-Real-IP $remote_addr;
+    	proxy_set_header    X-Forwarded-For $proxy_add_x_forwarded_for;
+    	proxy_set_header    X-Forwarded-Proto $scheme;
+	proxy_pass  http://172.16.8.75:8080;
+	proxy_read_timeout  20d;
+    	proxy_buffering off;
+
+    	proxy_set_header Upgrade $http_upgrade;
+    	proxy_set_header Connection $connection_upgrade;
+	proxy_http_version 1.1;
+
+    	proxy_redirect      / $scheme://$host/;
+      
+  }
+
+}
+
+```
+
+`172.16.8.75` is where the webapp are running right now, we will get a proper dns at some point, I promess. 
+
+
