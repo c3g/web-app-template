@@ -2,7 +2,7 @@
 
 First find a clear name for your app, and replace the header of this section!
 
-Your app will run into a [podman container](https://podman.io/docs), it will make its deployement easyer in our infratructure.
+Your app will run into a [podman container](https://podman.io/docs), it will make its deployment easier in our infrastructure.
 
 ## Some considerations for app developers
 
@@ -11,12 +11,12 @@ We user the Containerfile instead of the Dockerfile naming convention to follow 
 
 1. Install the app in the /app folder 
 
-Install you app in the /app folder, it will make it easier to find our way around if debugging is needed.
+Install your apps in the /app folder, it will make it easier to find our way around if debugging is needed.
 
 2. DB 
-If you need a database for the app, make sure that it is compatible with postgress, it is the only supported DB for now. 
+If you need a database for the app, make sure that it is compatible with postgres, it is the only supported DB for now. 
 
-Make sure that the app is able to read the username and the password, the location and name of the database from environement variabled and/or from a podman secret.  
+Make sure that the app is able to read the username and the password, the location and name of the database from environment variables or from a podman secret.  
 
 Something in a single var like `MY_APP_DATABASE_URI`
 ```bash 
@@ -32,11 +32,11 @@ MY_APP_DB_NAME=<DB NAME>
 
 
 3. Data
-The app should store its data in the container /data folder, that means that it has to be configurable with an option or a environement variable when the app is started. The /data folder will be mounted from the host inside the container and it will be possible to backup its content. 
+The app should store its data in the container /data folder, which means that it has to be configurable with an option or an environment variable when the app is started. The /data folder will be mounted from the host inside the container and it will be possible to backup its content. 
 
-## Some considerations for sysadmin deploying the app:
-### Deplpoying the container 
-Onece the conainer ready, it needs to be deployed on the webapp vm. You can use this template to deploy it with systemd:
+## Some considerations for sysadmins deploying the app:
+### Deploying the container 
+Once the container ready, it needs to be deployed on the webapp VM. You can use this template to deploy it with systemd:
 ```service 
 [Unit]
 Description=<My super webapp>
@@ -57,7 +57,7 @@ ExecStart=/usr/bin/podman run \
 	--sdnotify=conmon \
 	-d \
 	--replace \
-	--name <running conainer name> \
+	--name <running container name> \
 	--label io.containers.autoupdate=registry \
 	--secret DATABASE_NAME_ANDPW,type=env \
 	--network slirp4netns:allow_host_loopback=true \
@@ -72,8 +72,8 @@ WantedBy=default.target
 ```
 
 This configuration has some interesting options:
-`--network slirp4netns:allow_host_loopback=true` will exposed localhost on the 10.0.2.2 ip adress. This will let the running app inside the container acess postgress on that adress, on the default port 5432. 
-`--label io.containers.autoupdate=registry` will make sure that once a container in available in the registry with the exact same tag, in this example the registry is quay.io/c3genomics/<my container> and the tag latest, it will be downloaded and started, this will let the developers update their app witout having to hask a sysadmin, they simply need to push a new container to the registry. Note that the check to run the automatic update is ran every 15 minutes.
+`--network slirp4netns:allow_host_loopback=true` will expose localhost on the 10.0.2.2 IP address. This will let the running app inside the container access postgres on that address, on the default port 5432. 
+`--label io.containers.autoupdate=registry` will make sure that once a container in available in the registry with the exact same tag, in this example the registry is quay.io/c3genomics/<my container> and the tag latest, it will be downloaded and started, this will let the developers update their app without having to ask a sysadmin, they simply need to push a new container to the registry. Note that the check to run the automatic update is running every 15 minutes.
 
 
 To activate the systemd for the podman container, run:
@@ -93,7 +93,7 @@ b0e789e48db0  quay.io/c3genomics/parpal:latest                                10
 ```
 ### Adding a route to the nginx server
 
-On the web proxy, the configuration are all in `/etc/nginx/conf.d`. You can create a server directly use the * certificate valid for all the `*.c3g-app.sd4h.ca` adresses installed on the system, for example, for <my new app>:
+On the web proxy, the configurations are all in `/etc/nginx/conf.d`. You can create a server directly use the * certificate valid for all the `*.c3g-app.sd4h.ca` addresses installed on the system, for example, for <my new app>:
 
 ```
 server {
@@ -134,6 +134,6 @@ server {
 
 ```
 
-will work out of the box witout any extra dns or certificate configuration. Also `172.16.8.75` is where the webapp are running right now, we will get a proper internal dns setup at some point, I promess. 
+Will work out of the box without any extra DNS or certificate configuration. Also `172.16.8.75` is where the webapp are running right now, we will get a proper internal DNS setup at some point, I promise. 
 
 
