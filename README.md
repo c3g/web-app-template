@@ -134,6 +134,6 @@ server {
 
 ```
 
-`172.16.8.75` is where the webapp are running right now, we will get a proper dns at some point, I promess. 
+will work out of the box witout any extra dns or certificate configuration. Also `172.16.8.75` is where the webapp are running right now, we will get a proper internal dns setup at some point, I promess. 
 
 
