@@ -91,6 +91,20 @@ podman ps
 b0e789e48db0  quay.io/c3genomics/parpal:latest                                10 hours ago  Up 10 hours  0.0.0.0:8001->8000/tcp  PARPAL
 613c454b4fec  docker.io/sosedoff/pgweb:0.15.0                                 7 hours ago   Up 7 hours   0.0.0.0:8081->8081/tcp  pg-web
 ```
+
+### Creating a new user and database in postgres 
+
+Connect to the posgess server
+```
+sudo -u postgres psql
+```
+Ceate the DB ad the user for the app to store its data
+```
+CREATE DATABASE <MY_APP_DB_NAME>;
+CREATE USER <MY_APP_DB_USER> WITH ENCRYPTED PASSWORD '<MY_APP_DB_PW>';
+GRANT ALL PRIVILEGES ON DATABASE <MY_APP_DB_NAME> TO <MY_APP_DB_USER>;
+```
+
 ### Adding a route to the nginx server
 
 On the web proxy, the configurations are all in `/etc/nginx/conf.d`. You can create a server directly use the * certificate valid for all the `*.c3g-app.sd4h.ca` addresses installed on the system, for example, for <my new app>:
