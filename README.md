@@ -91,17 +91,24 @@ podman ps
 b0e789e48db0  quay.io/c3genomics/parpal:latest                                10 hours ago  Up 10 hours  0.0.0.0:8001->8000/tcp  PARPAL
 613c454b4fec  docker.io/sosedoff/pgweb:0.15.0                                 7 hours ago   Up 7 hours   0.0.0.0:8081->8081/tcp  pg-web
 ```
+### Reserve space for your new app
+
+You have to create a new volume in the C3G-prod project and mount it on the webapp VM and expose 
+that volume to the container so it can store data. Make sure to mount that folder in the 
+/data path of the container. That is where we have told the developers they will find their data. 
+
 
 ### Creating a new user and database in postgres 
-
+Every app should have its used in the database so isolation is ensured between apps.
 Connect to the posgess server
 ```
 sudo -u postgres psql
 ```
-Ceate the DB ad the user for the app to store its data
+Ceate the DB and the user for the app to store its data.
 ```
 CREATE DATABASE <MY_APP_DB_NAME>;
 CREATE USER <MY_APP_DB_USER> WITH ENCRYPTED PASSWORD '<MY_APP_DB_PW>';
+ALTER DATABASE <MY_APP_DB_NAME> OWNER TO <MY_APP_DB_USER>;
 GRANT ALL PRIVILEGES ON DATABASE <MY_APP_DB_NAME> TO <MY_APP_DB_USER>;
 ```
 
