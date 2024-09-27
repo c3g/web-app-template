@@ -9,8 +9,8 @@ Your app will run into a [podman container](https://podman.io/docs), it will mak
 We user the Containerfile instead of the Dockerfile naming convention to follow the 
 [Open Container Initiative (OCI)](https://opencontainers.org/) conventions. But if you already know how to work with dockerfiles, it is more or less the same thing.
 
-1. Install the app in the /app folder 
-
+1. Installation location
+ 
 Install your apps in the /app folder, it will make it easier to find our way around if debugging is needed.
 
 2. DB 
@@ -33,6 +33,7 @@ MY_APP_DB_NAME=<DB NAME>
 
 
 3. Data
+   
 The app should store its data in the container /data folder, which means that it has to be configurable with an option or an environment variable when the app is started. The /data folder will be mounted from the host inside the container and it will be possible to backup its content. 
 
 ## Some considerations for sysadmins deploying the app:
