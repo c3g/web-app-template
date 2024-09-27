@@ -14,6 +14,7 @@ We user the Containerfile instead of the Dockerfile naming convention to follow 
 Install your apps in the /app folder, it will make it easier to find our way around if debugging is needed.
 
 2. DB 
+
 If you need a database for the app, make sure that it is compatible with postgres, it is the only supported DB for now. 
 
 Make sure that the app is able to read the username and the password, the location and name of the database from environment variables or from a podman secret.  
