@@ -99,6 +99,13 @@ You have to create a new volume in the C3G-prod project and mount it on the weba
 that volume to the container so it can store data. Make sure to mount that folder in the 
 /data path of the container. That is where we have told the developers they will find their data. 
 
+Once the volume is exposed to the mv, you need to configure it: 
+```
+  parted /dev/vdX   --script  mktable gpt
+  parted /dev/vdX   mkpart primary  xfs 0% 100%
+  mkfs.xfs /dev/vdX1  
+  echo "/dev/vdX1 /home/genome/<appname>-volume xfs defaults, 0 0"
+```
 
 ### Creating a new user and database in postgres 
 Every app should have its used in the database so isolation is ensured between apps.
