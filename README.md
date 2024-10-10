@@ -37,6 +37,18 @@ MY_APP_DB_NAME=<DB NAME>
 The app should store its data in the container /data folder, which means that it has to be configurable with an option or an environment variable when the app is started. The /data folder will be mounted from the host inside the container and it will be possible to backup its content. 
 
 ## Some considerations for sysadmins deploying the app:
+The podman container are running in user space, the user is `genome`. Right now the all the apps and databases are running on the same host: 172.16.8.75.
+
+### Login to the webapp server
+After you login to the webapp server, impersonate the genome user, use `machinectl` instead of `sudo -s` to make sure that all systemd variable are set properly. 
+```
+$ bastion_ssh bastion_user@172.16.8.75
+[...]
+[bastion_user@tracking-api ~]$ sudo machinectl shell genome@
+[...]
+[genome@tracking-api ~]$
+```
+
 ### Deploying the container 
 Once the container ready, it needs to be deployed on the webapp VM. You can use this template to deploy it with systemd:
 ```service 
@@ -50,7 +62,6 @@ RequiresMountsFor=%t/containers
 [Service]
 Environment=PODMAN_SYSTEMD_UNIT=%n
 Restart=on-failure
-TimeoutStopSec=70
 ExecStartPre=/bin/rm -f %t/%n.ctr-id
 ExecStart=/usr/bin/podman run \
 	--cidfile=%t/%n.ctr-id \
@@ -61,7 +72,6 @@ ExecStart=/usr/bin/podman run \
 	--replace \
 	--name <running container name> \
 	--label io.containers.autoupdate=registry \
-	--secret DATABASE_NAME_ANDPW,type=env \
 	--network slirp4netns:allow_host_loopback=true \
 	-p 8088:8080 quay.io/c3genomics/<my container>:latest -w 1
 ExecStop=/usr/bin/podman stop --ignore --cidfile=%t/%n.ctr-id
@@ -75,7 +85,9 @@ WantedBy=default.target
 
 This configuration has some interesting options:
 `--network slirp4netns:allow_host_loopback=true` will expose localhost on the 10.0.2.2 IP address. This will let the running app inside the container access postgres on that address, on the default port 5432. 
-`--label io.containers.autoupdate=registry` will make sure that once a container in available in the registry with the exact same tag, in this example the registry is quay.io/c3genomics/<my container> and the tag latest, it will be downloaded and started, this will let the developers update their app without having to ask a sysadmin, they simply need to push a new container to the registry. Note that the check to run the automatic update is running every 15 minutes.
+`--label io.containers.autoupdate=registry` will make sure that once a container in available in the registry with the exact same tag, in this example the registry is quay.io/c3genomics/<my container> and the tag latest, it will be downloaded and started, this will let the developers update their app without having to ask a sysadmin, they simply need to push a new container to the registry. Note that the check to run the automatic update is running every 15 minutes. 
+
+If you run a official container for a remote app, fix the tag to a specific version, of pick a tag for a version that will recive security update and wont break dependencies, for example, for wikimedia mariadb we have picked `docker.io/library/mariadb:lts-noble`.
 
 
 To activate the systemd for the podman container, run:
@@ -88,7 +100,7 @@ systemctl --user enable --now <my_new_unit>
 you can check that it is now running with the podman ps command
 ```
 podman ps
-22fabdd23301  quay.io/c3genomics/<my new webapp>:latest_release               2 seconds ago Up 2 seconds 0.0.0.0:8080->8080/tcp  <my new webapp>
+22fabdd23301  quay.io/c3genomics/<my new webapp>:latest               2 seconds ago Up 2 seconds 0.0.0.0:8080->8080/tcp  <my new webapp>
 2f28e1b3c644  quay.io/c3genomics/project_tracking:latest_release  -w 1        7 weeks ago   Up 7 weeks   0.0.0.0:8000->8000/tcp  traking-api
 b0e789e48db0  quay.io/c3genomics/parpal:latest                                10 hours ago  Up 10 hours  0.0.0.0:8001->8000/tcp  PARPAL
 613c454b4fec  docker.io/sosedoff/pgweb:0.15.0                                 7 hours ago   Up 7 hours   0.0.0.0:8081->8081/tcp  pg-web
