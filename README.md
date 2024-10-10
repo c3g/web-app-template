@@ -107,7 +107,7 @@ b0e789e48db0  quay.io/c3genomics/parpal:latest                                10
 ```
 ### Reserve space for your new app
 
-You have to create a new volume in the C3G-prod project and mount it on the webapp VM and expose 
+You might have to create a new volume in the C3G-prod project and mount it on the webapp VM and expose 
 that volume to the container so it can store data. Make sure to mount that folder in the 
 /data path of the container. That is where we have told the developers they will find their data. 
 
@@ -118,6 +118,24 @@ Once the volume is exposed to the mv, you need to configure it:
   mkfs.xfs /dev/vdX1  
   echo "/dev/vdX1 /home/genome/<appname>-volume xfs defaults, 0 0"
 ```
+
+Then you need to mount the volune in the container so it can acess the data, you do that by adding the `-v` option to the app servive file:
+
+```
+ExecStart=/usr/bin/podman run \
+	--cidfile=%t/%n.ctr-id \
+	--cgroups=no-conmon \
+	--rm \
+	--sdnotify=conmon \
+	-d \
+	--replace \
+	--name <running container name> \
+	-v  /home/genome/<appname>-volume:/data:Z
+	--label io.containers.autoupdate=registry \
+	--network slirp4netns:allow_host_loopback=true \
+	-p 8088:8080 quay.io/c3genomics/<my container>:latest -w 1
+```
+the `:Z` extra option at the end of the mount option is to make sure that the read write and cgroup permission are set properly.
 
 ### Creating a new user and database in postgres 
 Every app should have its used in the database so isolation is ensured between apps.
