@@ -117,7 +117,7 @@ Once the volume is exposed to the mv, you need to configure it:
   parted /dev/vdX   mkpart primary  xfs 0% 100%
   mkfs.xfs /dev/vdX1
   mkdir /home/genome/<appname>-volume
-  echo "/dev/vdX1 /home/genome/<appname>-volume xfs defaults, 0 0"
+  echo "/dev/vdX1 /home/genome/<appname>-volume xfs defaults, 0 0" > /etc/fstab
   chown -R genome /home/genome/<appname>-volume
 ```
 
