@@ -115,8 +115,10 @@ Once the volume is exposed to the mv, you need to configure it:
 ```
   parted /dev/vdX   --script  mktable gpt
   parted /dev/vdX   mkpart primary  xfs 0% 100%
-  mkfs.xfs /dev/vdX1  
+  mkfs.xfs /dev/vdX1
+  mkdir /home/genome/<appname>-volume
   echo "/dev/vdX1 /home/genome/<appname>-volume xfs defaults, 0 0"
+  chown -R genome /home/genome/<appname>-volume
 ```
 
 Then you need to mount the volune in the container so it can acess the data, you do that by adding the `-v` option to the app servive file:
