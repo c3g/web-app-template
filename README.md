@@ -118,9 +118,9 @@ Once the volume is exposed to the mv, you need to configure it:
   mkfs.xfs /dev/vdX1
   mkdir /home/genome/<appname>-volume
   echo "/dev/vdX1 /home/genome/<appname>-volume xfs defaults, 0 0" > /etc/fstab
-  chown -R genome /home/genome/<appname>-volume
   systemctl daemon-reload
   mount -a
+  chown -R genome /home/genome/<appname>-volume
 ```
 
 Then you need to mount the volune in the container so it can acess the data, you do that by adding the `-v` option to the app servive file:
