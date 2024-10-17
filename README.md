@@ -113,14 +113,16 @@ that volume to the container so it can store data. Make sure to mount that folde
 
 Once the volume is exposed to the mv, you need to configure it: 
 ```
-  parted /dev/vdX   --script  mktable gpt
-  parted /dev/vdX   mkpart primary  xfs 0% 100%
-  mkfs.xfs /dev/vdX1
-  mkdir /home/genome/<appname>-volume
-  echo "/dev/vdX1 /home/genome/<appname>-volume xfs defaults, 0 0" > /etc/fstab
+  APPNAME=<app name>
+  X=<partition letter>
+  parted /dev/vd${X}   --script  mktable gpt
+  parted /dev/vd${X}   mkpart primary  xfs 0% 100%
+  mkfs.xfs /dev/vd${X}1
+  mkdir /home/genome/${APPNAME}-volume
+  echo "/dev/vd${X}1 /home/genome/<appname>-volume xfs defaults, 0 0" > /etc/fstab
   systemctl daemon-reload
   mount -a
-  chown -R genome:genome /home/genome/<appname>-volume
+  chown -R genome:genome /home/genome/${APPNAME}-volume
 ```
 
 Then you need to mount the volune in the container so it can acess the data, you do that by adding the `-v` option to the app servive file:
@@ -140,6 +142,53 @@ ExecStart=/usr/bin/podman run \
 	-p 8088:8080 quay.io/c3genomics/<my container>:latest -w 1
 ```
 the `:Z` extra option at the end of the mount option is to make sure that the read write and cgroup permission are set properly.
+
+#### Make more space for the volume
+
+You might need to add more space to the webapp volume. The first step is to set a bigger value to the openstack volume, then connect to the vm.
+
+Check that your volume, here vdh has some free space at its end (here we got a volume from 2145MB to 10.7GB)
+```
+# parted -s -a opt /dev/vdh "print free"
+Model: Virtio Block Device (virtblk)
+Disk /dev/vdh: 10.7GB
+Sector size (logical/physical): 512B/512B
+Partition Table: gpt
+Disk Flags: 
+
+Number  Start   End     Size    File system  Name     Flags
+        17.4kB  1049kB  1031kB  Free Space
+ 1      1049kB  2146MB  2145MB  xfs          primary
+        2146MB  10.7GB  8591MB  Free Space
+
+```
+
+We will add that whole space to partion Number 1:
+
+```
+APPNAME=<app name>
+X=<partition letter>
+umount /home/genome/${APPNAME}-volume
+parted -s -a opt /dev/vd${X} "resizepart 1 100%"
+xfs_growfs /home/genome/jenkins-volume
+mount -a
+```
+Then make sure that the partion has grown:
+
+```
+# parted -s -a opt /dev/vdh "print free"
+Model: Virtio Block Device (virtblk)
+Disk /dev/vdh: 10.7GB
+Sector size (logical/physical): 512B/512B
+Partition Table: gpt
+Disk Flags: 
+
+Number  Start   End     Size    File system  Name     Flags
+        17.4kB  1049kB  1031kB  Free Space
+ 1      1049kB  10.7GB  10.7GB  xfs          primary
+
+```
+It now has the whole space to itself.
 
 ### Creating a new user and database in postgres 
 Every app should have its used in the database so isolation is ensured between apps.
