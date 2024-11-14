@@ -49,8 +49,8 @@ $ bastion_ssh bastion_user@172.16.8.75
 [genome@tracking-api ~]$
 ```
 
-### Deploying the container 
-Once the container ready, it needs to be deployed on the webapp VM. You can use this template to deploy it with systemd:
+### Deploying the container
+Once the container is ready, it needs to be deployed on the webapp VM. You can use this template to deploy it with systemd:
 ```service 
 [Unit]
 Description=<My super webapp>
@@ -87,7 +87,7 @@ This configuration has some interesting options:
 `--network slirp4netns:allow_host_loopback=true` will expose localhost on the 10.0.2.2 IP address. This will let the running app inside the container access postgres on that address, on the default port 5432. 
 `--label io.containers.autoupdate=registry` will make sure that once a container in available in the registry with the exact same tag, in this example the registry is quay.io/c3genomics/<my container> and the tag latest, it will be downloaded and started, this will let the developers update their app without having to ask a sysadmin, they simply need to push a new container to the registry. Note that the check to run the automatic update is running every 15 minutes. 
 
-If you run a official container for a remote app, fix the tag to a specific version, of pick a tag for a version that will recive security update and wont break dependencies, for example, for wikimedia mariadb we have picked `docker.io/library/mariadb:lts-noble`.
+If you run a official container for a remote app, fix the tag to a specific version, of pick a tag for a version that will receive security update and wont break dependencies, for example, for wikimedia mariadb we have picked `docker.io/library/mariadb:lts-noble`.
 
 
 To activate the systemd for the podman container, run:
@@ -125,7 +125,7 @@ Once the volume is exposed to the mv, you need to configure it:
   chown -R genome:genome /home/genome/${APPNAME}-volume
 ```
 
-Then you need to mount the volune in the container so it can acess the data, you do that by adding the `-v` option to the app servive file:
+Then you need to mount the volume in the container so it can access the data, you do that by adding the `-v` option to the app service file:
 
 ```
 ExecStart=/usr/bin/podman run \
@@ -145,7 +145,7 @@ the `:Z` extra option at the end of the mount option is to make sure that the re
 
 #### Make more space for the volume
 
-You might need to add more space to the webapp volume. The first step is to set a bigger value to the openstack volume, then connect to the vm.
+You might need to add more space to the webapp volume. The first step is to set a bigger value to the openstack volume, then connect to the VM.
 
 Check that your volume, here vdh has some free space at its end (here we got a volume from 2145MB to 10.7GB)
 ```
@@ -163,7 +163,7 @@ Number  Start   End     Size    File system  Name     Flags
 
 ```
 
-We will add that whole space to partion Number 1:
+We will add that whole space to partition Number 1:
 
 ```
 APPNAME=<app name>
@@ -173,7 +173,7 @@ parted -s -a opt /dev/vd${X} "resizepart 1 100%"
 xfs_growfs /home/genome/jenkins-volume
 mount -a
 ```
-Then make sure that the partion has grown:
+Then make sure that the partition has grown:
 
 ```
 # parted -s -a opt /dev/vdh "print free"
@@ -192,11 +192,11 @@ It now has the whole space to itself.
 
 ### Creating a new user and database in postgres 
 Every app should have its used in the database so isolation is ensured between apps.
-Connect to the posgess server
+Connect to the postgres server
 ```
 sudo -u postgres psql
 ```
-Ceate the DB and the user for the app to store its data.
+Create the DB and the user for the app to store its data.
 ```
 CREATE DATABASE <MY_APP_DB_NAME>;
 CREATE USER <MY_APP_DB_USER> WITH ENCRYPTED PASSWORD '<MY_APP_DB_PW>';
@@ -249,4 +249,65 @@ server {
 
 Will work out of the box without any extra DNS or certificate configuration. Also `172.16.8.75` is where the webapp are running right now, we will get a proper internal DNS setup at some point, I promise. 
 
+### GitHub Actions to publish your container
 
+You can use the following GitHub Action to publish your container to the registry. This template generates a container labelled "latest".
+
+```yaml
+name: Publish Container
+
+on:
+  push:
+    branches: ['main']
+
+env:
+  REGISTRY: ghcr.io
+  REGISTRY_USER: ${{ github.actor }}
+  REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    # Sets the permissions granted to the `GITHUB_TOKEN` for the actions in this job.
+    permissions:
+      contents: write
+      packages: write
+      attestations: write
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Setup Git
+        run: |
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+      # This can be ignored if you don't plan to build a container on multiple architectures
+      ##
+      - name: Update package lists
+        run: sudo apt-get update
+      - name: Install QEMU
+        run: sudo apt-get install --fix-missing qemu-user-static
+      ##
+      # There is an example with 2 architectures, amd64 and arm64. Adapt yo your needs
+      - name: Build Container Image
+        uses: redhat-actions/buildah-build@v2
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: latest
+          # Make sure to adapt the path to your Containerfile
+          containerfiles: ./Containerfile
+          archs: amd64,arm64
+      - name: Push to repo
+        uses: redhat-actions/push-to-registry@v2
+        with:
+          username: ${{ env.REGISTRY_USER }}
+          password: ${{ env.REGISTRY_PASSWORD }}
+          registry: ${{ env.REGISTRY }}
+          image: ${{ env.IMAGE_NAME }}
+          tags: latest
+```
