@@ -251,7 +251,7 @@ Will work out of the box without any extra DNS or certificate configuration. Als
 
 ### GitHub Actions to publish your container
 
-You can use the following GitHub Action to publish your container to the registry. This template generates a container labelled "latest".
+You can use the following GitHub Action to publish your container to the registry. This template generates a container labelled "latest". This files goes under `.github/workflows/publish-container.yml` in your repository.
 
 ```yaml
 name: Publish Container
