@@ -119,13 +119,13 @@ Once the volume is exposed to the mv, you need to configure it:
   parted /dev/vd${X}   mkpart primary  xfs 0% 100%
   mkfs.xfs /dev/vd${X}1
   mkdir /home/genome/${APPNAME}-volume
-  echo "/dev/vd${X}1 /home/genome/<appname>-volume xfs defaults, 0 0" > /etc/fstab
+  echo "/dev/vd${X}1 /home/genome/${APPNAME}-volume xfs defaults, 0 0" >> /etc/fstab
   systemctl daemon-reload
   mount -a
   chown -R genome:genome /home/genome/${APPNAME}-volume
 ```
 
-Then you need to mount the volume in the container so it can access the data, you do that by adding the `-v` option to the app service file:
+Then you need to mount the volume in the container so it can access the data, you do that by adding the `-v` option to the app service file. Replace `${APPNAME}` accordingly:
 
 ```
 ExecStart=/usr/bin/podman run \
@@ -136,12 +136,12 @@ ExecStart=/usr/bin/podman run \
 	-d \
 	--replace \
 	--name <running container name> \
-	-v  /home/genome/<appname>-volume:/data:Z
+	-v  /home/genome/${APPNAME}-volume:/data:Z
 	--label io.containers.autoupdate=registry \
 	--network slirp4netns:allow_host_loopback=true \
 	-p 8088:8080 quay.io/c3genomics/<my container>:latest -w 1
 ```
-the `:Z` extra option at the end of the mount option is to make sure that the read write and cgroup permission are set properly.
+The `:Z` extra option at the end of the mount option is to make sure that the read write and cgroup permission are set properly.
 
 #### Make more space for the volume
 
