@@ -149,7 +149,10 @@ You might need to add more space to the webapp volume. The first step is to set 
 
 Check that your volume, here vdh has some free space at its end (here we got a volume from 2145MB to 10.7GB)
 ```
-# parted -s -a opt /dev/vdh "print free"
+APPNAME=<app name>
+X=<partition letter>
+
+# parted -s -a opt /dev/vd${X} "print free"
 Model: Virtio Block Device (virtblk)
 Disk /dev/vdh: 10.7GB
 Sector size (logical/physical): 512B/512B
@@ -166,17 +169,21 @@ Number  Start   End     Size    File system  Name     Flags
 We will add that whole space to partition Number 1:
 
 ```
-APPNAME=<app name>
-X=<partition letter>
+# If parted warns the GPT doesn't reflect the full disk size, fix it first:
+sgdisk -e /dev/vd${X}
+partprobe /dev/vd${X}
+parted /dev/vd${X} "print free"   # confirm warning is gone
+
+# Unmount, resize, remount, grow
 umount /home/genome/${APPNAME}-volume
 parted -s -a opt /dev/vd${X} "resizepart 1 100%"
-xfs_growfs /home/genome/jenkins-volume
 mount -a
+xfs_growfs /home/genome/${APPNAME}-volume
 ```
 Then make sure that the partition has grown:
 
 ```
-# parted -s -a opt /dev/vdh "print free"
+# parted -s -a opt /dev/vd${X} "print free"
 Model: Virtio Block Device (virtblk)
 Disk /dev/vdh: 10.7GB
 Sector size (logical/physical): 512B/512B
@@ -188,7 +195,7 @@ Number  Start   End     Size    File system  Name     Flags
  1      1049kB  10.7GB  10.7GB  xfs          primary
 
 ```
-It now has the whole space to itself.
+Check also on the genome user running `df -h` you'll see tghe new size.
 
 ### Creating a new user and database in postgres 
 Every app should have its used in the database so isolation is ensured between apps.
