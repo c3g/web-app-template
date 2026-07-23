@@ -24,7 +24,7 @@ Something in a single var like `MY_APP_DATABASE_URI`
 MY_APP_DATABASE_URI="postgresql+psycopg2://<POSTGRESS_USER>:<POSTGRESS_PW>@<POSTGRESS_HOST>/<DB_NAME>?client_encoding=utf8"
 ```
 or in many variable like 
-```
+```bash
 MY_APP_DB_USER=<USER>
 MY_APP_DB_PW=<PASSWORD>
 MY_APP_DB_HOST=<HOST:PORT>
@@ -41,7 +41,7 @@ The podman container are running in user space, the user is `genome`. Right now 
 
 ### Login to the webapp server
 After you login to the webapp server, impersonate the genome user, use `machinectl` instead of `sudo -s` to make sure that all systemd variable are set properly. 
-```
+```bash
 $ bastion_ssh bastion_user@172.16.8.75
 [...]
 [bastion_user@tracking-api ~]$ sudo machinectl shell genome@
@@ -98,7 +98,7 @@ systemctl --user enable --now <my_new_unit>
 ```
 
 you can check that it is now running with the podman ps command
-```
+```bash
 podman ps
 22fabdd23301  quay.io/c3genomics/<my new webapp>:latest               2 seconds ago Up 2 seconds 0.0.0.0:8080->8080/tcp  <my new webapp>
 2f28e1b3c644  quay.io/c3genomics/project_tracking:latest_release  -w 1        7 weeks ago   Up 7 weeks   0.0.0.0:8000->8000/tcp  traking-api
@@ -112,22 +112,34 @@ that volume to the container so it can store data. Make sure to mount that folde
 /data path of the container. That is where we have told the developers they will find their data. 
 
 Once the volume is exposed to the mv, you need to configure it: 
-```
-  APPNAME=<app name>
-  X=<partition letter>
-  parted /dev/vd${X}   --script  mktable gpt
-  parted /dev/vd${X}   mkpart primary  xfs 0% 100%
-  mkfs.xfs /dev/vd${X}1
-  mkdir /home/genome/${APPNAME}-volume
-  echo "/dev/vd${X}1 /home/genome/${APPNAME}-volume xfs defaults, 0 0" >> /etc/fstab
-  systemctl daemon-reload
-  mount -a
-  chown -R genome:genome /home/genome/${APPNAME}-volume
+```bash
+APPNAME=<app name>
+X=<partition letter>
+parted /dev/vd${X}   --script  mktable gpt
+parted /dev/vd${X}   mkpart primary  xfs 0% 100%
+mkfs.xfs /dev/vd${X}1
+
+# Label the filesystem so fstab can reference it by LABEL instead of a raw
+# device path (device letters like vdb/vdc can shift if disks are
+# reattached in a different order — a label doesn't).
+# NOTE: XFS labels are capped at 12 characters. If ${APPNAME} is longer,
+# this command will fail — use a short abbreviation for the label instead.
+xfs_admin -L ${APPNAME} /dev/vd${X}1
+
+mkdir /home/genome/${APPNAME}-volume
+echo "LABEL=${APPNAME} /home/genome/${APPNAME}-volume xfs defaults 0 0" >> /etc/fstab
+systemctl daemon-reload
+mount -a
+chown -R genome:genome /home/genome/${APPNAME}-volume
+
+# Troubleshooting: if the volume doesn't mount as expected —
+#   ls /dev/disk/by-label   # confirms the kernel/udev registered the label
+#   dmesg                   # confirms the kernel saw the disk get attached
 ```
 
 Then you need to mount the volume in the container so it can access the data, you do that by adding the `-v` option to the app service file. Replace `${APPNAME}` accordingly:
 
-```
+```service
 ExecStart=/usr/bin/podman run \
 	--cidfile=%t/%n.ctr-id \
 	--cgroups=no-conmon \
@@ -148,7 +160,7 @@ The `:Z` extra option at the end of the mount option is to make sure that the re
 You might need to add more space to the webapp volume. The first step is to set a bigger value to the openstack volume, then connect to the VM.
 
 Check that your volume, here vdh has some free space at its end (here we got a volume from 2145MB to 10.7GB)
-```
+```bash
 APPNAME=<app name>
 X=<partition letter>
 
@@ -168,7 +180,7 @@ Number  Start   End     Size    File system  Name     Flags
 
 We will add that whole space to partition Number 1:
 
-```
+```bash
 # If parted warns the GPT doesn't reflect the full disk size, fix it first:
 sgdisk -e /dev/vd${X}
 partprobe /dev/vd${X}
@@ -182,7 +194,7 @@ xfs_growfs /home/genome/${APPNAME}-volume
 ```
 Then make sure that the partition has grown:
 
-```
+```bash
 # parted -s -a opt /dev/vd${X} "print free"
 Model: Virtio Block Device (virtblk)
 Disk /dev/vdh: 10.7GB
@@ -200,11 +212,11 @@ Check also on the genome user running `df -h` you'll see tghe new size.
 ### Creating a new user and database in postgres 
 Every app should have its used in the database so isolation is ensured between apps.
 Connect to the postgres server
-```
+```bash
 sudo -u postgres psql
 ```
 Create the DB and the user for the app to store its data.
-```
+```sql
 CREATE DATABASE <MY_APP_DB_NAME>;
 CREATE USER <MY_APP_DB_USER> WITH ENCRYPTED PASSWORD '<MY_APP_DB_PW>';
 ALTER DATABASE <MY_APP_DB_NAME> OWNER TO <MY_APP_DB_USER>;
@@ -215,7 +227,7 @@ GRANT ALL PRIVILEGES ON DATABASE <MY_APP_DB_NAME> TO <MY_APP_DB_USER>;
 
 On the web proxy, the configurations are all in `/etc/nginx/conf.d`. You can create a server directly use the * certificate valid for all the `*.c3g-app.sd4h.ca` addresses installed on the system, for example, for <my new app>:
 
-```
+```bash
 server {
      listen 80 ;
      server_name <my new app>.c3g-app.sd4h.ca;
