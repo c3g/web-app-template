@@ -46,7 +46,7 @@ ExecStart=/usr/bin/podman run \
 	--name <running container name> \
 	--label io.containers.autoupdate=registry \
 	--network slirp4netns:allow_host_loopback=true \
-	-p 8088:8080 quay.io/c3genomics/<my container>:latest -w 1
+	-p 8088:8080 ghcr.io/<org>/<repo>:latest -w 1
 ExecStop=/usr/bin/podman stop --ignore --cidfile=%t/%n.ctr-id
 ExecStopPost=/usr/bin/podman rm -f --ignore --cidfile=%t/%n.ctr-id
 Type=notify
@@ -62,7 +62,7 @@ address. This will let the running app inside the container access postgres on t
 the default port 5432.
 `--label io.containers.autoupdate=registry` will make sure that once a container in available in
 the registry with the exact same tag, in this example the registry is
-quay.io/c3genomics/<my container> and the tag latest, it will be downloaded and started, this
+ghcr.io/<org>/<repo> and the tag latest, it will be downloaded and started, this
 will let the developers update their app without having to ask a sysadmin, they simply need to
 push a new container to the registry. Note that the check to run the automatic update is running
 every 15 minutes.
@@ -81,7 +81,7 @@ systemctl --user enable --now <my_new_unit>
 you can check that it is now running with the podman ps command
 ```bash
 podman ps
-22fabdd23301  quay.io/c3genomics/<my new webapp>:latest               2 seconds ago Up 2 seconds 0.0.0.0:8080->8080/tcp  <my new webapp>
+22fabdd23301  ghcr.io/<org>/<my new webapp>:latest                   2 seconds ago Up 2 seconds 0.0.0.0:8080->8080/tcp  <my new webapp>
 2f28e1b3c644  quay.io/c3genomics/project_tracking:latest_release  -w 1        7 weeks ago   Up 7 weeks   0.0.0.0:8000->8000/tcp  traking-api
 b0e789e48db0  quay.io/c3genomics/parpal:latest                                10 hours ago  Up 10 hours  0.0.0.0:8001->8000/tcp  PARPAL
 613c454b4fec  docker.io/sosedoff/pgweb:0.15.0                                 7 hours ago   Up 7 hours   0.0.0.0:8081->8081/tcp  pg-web
@@ -133,7 +133,7 @@ ExecStart=/usr/bin/podman run \
 	--secret MY_APP_DB_PASSWORD,type=env,target=DB_PASSWORD \
 	--label io.containers.autoupdate=registry \
 	--network slirp4netns:allow_host_loopback=true \
-	-p 8088:8080 quay.io/c3genomics/<my container>:latest -w 1
+	-p 8088:8080 ghcr.io/<org>/<repo>:latest -w 1
 ```
 
 `type=env,target=DB_PASSWORD` exposes the secret to the container as a plain env var named
@@ -210,10 +210,10 @@ ExecStart=/usr/bin/podman run \
 	-d \
 	--replace \
 	--name <running container name> \
-	-v  /home/genome/${APPNAME}-volume:/data:Z
+	-v /home/genome/${APPNAME}-volume:/data:Z \
 	--label io.containers.autoupdate=registry \
 	--network slirp4netns:allow_host_loopback=true \
-	-p 8088:8080 quay.io/c3genomics/<my container>:latest -w 1
+	-p 8088:8080 ghcr.io/<org>/<repo>:latest -w 1
 ```
 The `:Z` extra option at the end of the mount option is to make sure that the read write and
 cgroup permission are set properly.
@@ -418,7 +418,7 @@ ExecStart=/usr/bin/podman run \
 	-e OAUTH2_PROXY_PASS_USER_HEADERS=true \
 	-e OAUTH2_PROXY_UPSTREAMS=http://10.0.2.2:<app-port> \
 	-e OAUTH2_PROXY_HTTP_ADDRESS=0.0.0.0:4180 \
-	quay.io/oauth2-proxy/oauth2-proxy:latest
+	quay.io/oauth2-proxy/oauth2-proxy:<pinned version, e.g. v7.x.y>
 ExecStop=/usr/bin/podman stop --ignore --cidfile=%t/%n.ctr-id
 ExecStopPost=/usr/bin/podman rm -f --ignore --cidfile=%t/%n.ctr-id
 Type=notify
@@ -430,6 +430,10 @@ WantedBy=default.target
 
 Notes:
 
+- Pin the image to a specific release from
+  [oauth2-proxy's releases](https://github.com/oauth2-proxy/oauth2-proxy/releases), not
+  `latest` — it's a third-party image, so an unreviewed upstream release shouldn't reach the VM
+  through auto-update.
 - `OAUTH2_PROXY_UPSTREAMS` points at `10.0.2.2:<app-port>` — same host-loopback address the
   base deployment uses for reaching Postgres, since the app and oauth2-proxy are separate
   containers, not sharing a network namespace, unless you choose to put them in the same
@@ -469,7 +473,7 @@ ExecStart=/usr/bin/podman run \
 	--name <app>-opa \
 	--network slirp4netns:allow_host_loopback=true \
 	-p 127.0.0.1:8181:8181 \
-	openpolicyagent/opa:latest \
+	docker.io/openpolicyagent/opa:<pinned version, e.g. 1.x.y> \
 	run --server --addr 0.0.0.0:8181 --bundle <bundle URL>
 ExecStop=/usr/bin/podman stop --ignore --cidfile=%t/%n.ctr-id
 ExecStopPost=/usr/bin/podman rm -f --ignore --cidfile=%t/%n.ctr-id
@@ -482,6 +486,9 @@ WantedBy=default.target
 
 Notes:
 
+- Pin the image to a specific release from
+  [OPA's releases](https://github.com/open-policy-agent/opa/releases), not `latest`, for the
+  same reason as oauth2-proxy above.
 - Bind OPA's port to `127.0.0.1` only — it's a local sidecar, never meant to be reachable
   outside the VM. The app reaches it at `10.0.2.2:8181`, same host-loopback pattern as above.
 - `--bundle <bundle URL>` is where OPA polls its policy from. `c3g-opa-policies` builds each
@@ -530,7 +537,6 @@ that means:
   login against COmanage) — nothing for you to deploy for that; it's a client-side flow, not a
   service.
 
-Both halves of this design are ready to deploy: the OPA container above with `c3g-flask-opa` in
-the app, and `c3g-oidc` validating `pt_cli`'s bearer tokens. Check
-[c3g-opa-policies](https://github.com/c3g/c3g-opa-policies) for current status before treating
-any of the above as already live in production.
+The libraries for both halves are published (`c3g-flask-opa` and `c3g-oidc` on PyPI), but
+`project_tracking` hasn't adopted them yet — none of the above is live in production. Until it
+is, `project_tracking` still runs behind oauth2-proxy.
