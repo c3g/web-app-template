@@ -238,9 +238,17 @@ login to capture a cookie.
 
 `c3g-oidc`, when you need it, has two independent halves: `server/` validates a Bearer token
 in your Flask app (signature, expiry, issuer, audience — built on
-[Authlib](https://authlib.org)) and hands `c3g-flask-opa` a plain list of groups; `client/` has
+[joserfc](https://jose.authlib.org/), Authlib's JOSE library) and hands `c3g-flask-opa` a plain list of groups; `client/` has
 no Flask dependency and is what a CLI companion uses to get a token via device-code login,
 store it, and refresh it automatically.
+
+Both are on PyPI (pre-1.0, so pin the version):
+
+```bash
+pip install c3g-flask-opa         # Tier 3a and 3b
+pip install "c3g-oidc[server]"    # Tier 3b, inside the Flask app
+pip install c3g-oidc              # Tier 3b, inside a CLI companion (no Flask dependency)
+```
 
 #### R Shiny
 
@@ -279,7 +287,7 @@ needs:
 | Layer | Function | Does | Needs OPA |
 |---|---|---|---|
 | Tier 2, cosmetic | `c3g_groups()` | Reads and parses the forwarded-groups header from `session$request`, once, correctly. | No |
-| Tier 3, real authz | `c3g_require_authz(action, session)` | Called at the top of a guarded `observeEvent`/`downloadHandler`. Builds a `{action, groups}` input (no `path`/`method` — Shiny has no routes to key off), calls the app's local OPA sidecar, fails closed. | Yes |
+| Tier 3, real authz | `c3g_require_authz(action, session, policy_path)` | Called at the top of a guarded `observeEvent`/`downloadHandler`. Builds a `{action, groups}` input (no `path`/`method` — Shiny has no routes to key off), calls the app's local OPA sidecar, fails closed — including after a 2-second timeout, so a hung OPA can't freeze the app. | Yes |
 
 No OIDC-client layer exists for Shiny — oauth2-proxy stays in front regardless of layer, since
 Shiny has no non-browser client the way `pt_cli` justifies one for `project_tracking`. That
@@ -287,10 +295,22 @@ keeps the Shiny side to one small package, not two.
 
 ```r
 observeEvent(input$export_btn, {
-  c3g_require_authz("export_dataset", session)  # stops here, notifies the user, on deny
+  # stops here, notifies the user, on deny
+  c3g_require_authz("export_dataset", session, policy_path = "my_app/authz/allow")
   # ... proceed with the export
 })
 ```
+
+`policy_path` is your app's rule in `c3g-opa-policies`: the Rego package and rule name with
+dots replaced by slashes (package `my_app.authz`, rule `allow` → `"my_app/authz/allow"`).
+
+Install a tagged release (pre-1.0, so pin it):
+
+```r
+remotes::install_github("c3g/c3g.shiny.authz@v0.1.0")
+```
+
+The package ships a complete example app in `inst/examples/authz-demo/`.
 
 #### Other languages
 

@@ -181,7 +181,7 @@ app's language and client shape decide the concrete path:
 
 | App type | Authn (Tier 3) | Authz add-on | Notes |
 |---|---|---|---|
-| Flask | oauth2-proxy (3a), or in-app `c3g-oidc` (3b — only if there are non-browser clients) | `c3g-flask-opa` | `project_tracking` is the reference implementation, 3b |
+| Flask | oauth2-proxy (3a), or in-app `c3g-oidc` (3b — only if there are non-browser clients) | `c3g-flask-opa` | `project_tracking` is the intended first 3b app (not migrated yet) |
 | R Shiny | oauth2-proxy, always — no non-browser client story exists for Shiny | `c3g.shiny.authz` | most Shiny apps only need Tier 2; real Tier 3 is per-action, not per-route |
 | Other / anything else | oauth2-proxy by default; in-app OIDC only if it has non-browser clients | same recipe, own implementation | no library exists yet for a third language |
 
@@ -222,7 +222,8 @@ identity decisions itself.
 process next to an app. Given a request's details (whatever an app chooses to send it — method,
 path, groups, an action name) it answers exactly one question: allow or deny. The rules
 themselves live as versioned policy files (Rego), separate from application code — see
-[c3g-opa-policies](https://github.com/c3g/c3g-opa-policies).
+[c3g-opa-policies](https://github.com/c3g/c3g-opa-policies) (a private repo: real group names
+and rules stay out of public view).
 
 **podman / systemd**
 How apps actually run: each app is a container (podman), managed as a systemd user service
