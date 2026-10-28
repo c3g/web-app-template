@@ -375,15 +375,125 @@ deploy:
 | Tier | What you deploy |
 |---|---|
 | 1 · Public | Nothing extra. Same as the base template — nginx routes straight to the app. |
-| 2 · Gated | An oauth2-proxy container, in front of the app. |
-| 3a · Full authz | An oauth2-proxy container **and** an OPA container. |
-| 3b · Full authz, non-browser clients | An OPA container only — no oauth2-proxy. The app validates tokens itself. |
+| 2 · Gated | A pod holding the app and an oauth2-proxy container in front of it. |
+| 3a · Full authz | A pod holding the app, an oauth2-proxy container **and** an OPA container. |
+| 3b · Full authz, non-browser clients | A pod holding the app and an OPA container — no oauth2-proxy. The app validates tokens itself. |
+
+### One pod per app (Tiers 2 and 3)
+
+From Tier 2 up, the app no longer runs alone: it gets oauth2-proxy, OPA, or both, next to it.
+Put the app and those containers in one podman
+[pod](https://docs.podman.io/en/latest/markdown/podman-pod.1.html). Containers in a pod share
+one network namespace, so they reach each other at `127.0.0.1`, and nothing outside the pod can
+reach a port unless the pod publishes it. This is a security boundary, not a convenience:
+
+- **OPA is reachable only by its own app.** Every container on the VM runs with
+  `allow_host_loopback=true` (for Postgres), so a port published on the host's `127.0.0.1` is
+  reachable from every other app's container at `10.0.2.2`. OPA has no authentication of its
+  own: any container that reaches it can read its policy data and, before its first bundle
+  loads, replace its policy. Inside a pod, OPA publishes no port at all.
+- **Each app's OPA can use port 8181.** Two OPA containers can't both publish host port 8181;
+  two pods each have their own `127.0.0.1:8181`.
+- **For Tiers 2 and 3a, the app can't be reached around oauth2-proxy.** The pod publishes
+  oauth2-proxy's port only. If the app's own port were published, anyone who can reach the VM
+  (or any other container on it) could send a forged `X-Forwarded-Groups` header straight to
+  the app.
+
+The pod gets its own systemd unit, which creates the pod and owns its network and published
+ports. Save it as `pod-<app>.service`:
+
+```service
+[Unit]
+Description=<app> pod
+Documentation=man:podman-generate-systemd(1)
+Wants=network-online.target
+After=network-online.target
+RequiresMountsFor=%t/containers
+# One entry per container in the pod: the app, plus <app>-oauth2-proxy.service and/or
+# <app>-opa.service.
+Wants=<app>.service <app>-oauth2-proxy.service <app>-opa.service
+Before=<app>.service <app>-oauth2-proxy.service <app>-opa.service
+
+[Service]
+Environment=PODMAN_SYSTEMD_UNIT=%n
+Restart=on-failure
+TimeoutStopSec=70
+ExecStartPre=/usr/bin/podman pod create \
+	--infra-conmon-pidfile %t/pod-<app>.pid \
+	--pod-id-file %t/pod-<app>.pod-id \
+	--exit-policy=stop \
+	--replace \
+	--name <app> \
+	--network slirp4netns:allow_host_loopback=true \
+	-p <public-port>:<port inside the pod>
+ExecStart=/usr/bin/podman pod start --pod-id-file %t/pod-<app>.pod-id
+ExecStop=/usr/bin/podman pod stop --ignore --pod-id-file %t/pod-<app>.pod-id -t 10
+ExecStopPost=/usr/bin/podman pod rm --ignore -f --pod-id-file %t/pod-<app>.pod-id
+PIDFile=%t/pod-<app>.pid
+Type=forking
+
+[Install]
+WantedBy=default.target
+```
+
+- `--network` and `-p` move here, from the container units to the pod. The containers inherit
+  the pod's network, so the app still reaches Postgres at `10.0.2.2:5432`.
+- `-p` publishes exactly one port: oauth2-proxy's (`4180`) for Tiers 2 and 3a, the app's own
+  port for Tier 3b. Never publish OPA's.
+- The containers share one set of ports, so the app must not listen on `4180` or `8181`.
+
+Then change each container's unit — the app's own (from
+[Deploying the container](#deploying-the-container)) and the oauth2-proxy and OPA units below —
+so it joins the pod. Add `BindsTo=`/`After=` on the pod's unit, and replace `--network` and
+`-p` with `--pod-id-file`. For the app's unit:
+
+```diff
+ [Unit]
+ Description=<My super webapp>
+ Documentation=man:podman-generate-systemd(1)
+ Wants=network-online.target
+ After=network-online.target
+ RequiresMountsFor=%t/containers
++BindsTo=pod-<app>.service
++After=pod-<app>.service
+ ...
+ 	--replace \
+ 	--name <running container name> \
++	--pod-id-file %t/pod-<app>.pod-id \
+ 	--label io.containers.autoupdate=registry \
+-	--network slirp4netns:allow_host_loopback=true \
+-	-p 8088:8080 ghcr.io/<org>/<repo>:latest -w 1
++	ghcr.io/<org>/<repo>:latest -w 1
+```
+
+Copy all the units to `~/.config/systemd/user/`, then enable all of them and start the pod.
+Starting the pod's unit starts its containers:
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable pod-<app>.service <app>.service <app>-opa.service   # and/or <app>-oauth2-proxy.service
+systemctl --user start pod-<app>.service
+podman ps --pod      # every container lists the same pod
+```
+
+Auto-update still works per container: when a new app image is published, podman restarts
+only the app's unit, and it rejoins the running pod; oauth2-proxy and OPA keep running.
 
 ### Deploying oauth2-proxy (Tiers 2 and 3a)
 
 Register the app with whoever administers COmanage first — you'll need an issuer URL, a client
 ID, and a client secret before this container can start. For Tier 2, also decide the one
 COmanage group this app gates on.
+
+Store the two credentials as podman secrets (see [Secrets](#secrets)), not in the unit:
+
+```bash
+printf '%s' '<client secret>' | podman secret create MY_APP_OAUTH2_CLIENT_SECRET -
+openssl rand -base64 32 | tr -d '\n' | podman secret create MY_APP_OAUTH2_COOKIE_SECRET -
+```
+
+Save this unit as `<app>-oauth2-proxy.service`. It runs in the app's pod (see
+[One pod per app](#one-pod-per-app-tiers-2-and-3)):
 
 ```service
 [Unit]
@@ -392,6 +502,8 @@ Documentation=man:podman-generate-systemd(1)
 Wants=network-online.target
 After=network-online.target
 RequiresMountsFor=%t/containers
+BindsTo=pod-<app>.service
+After=pod-<app>.service
 
 [Service]
 Environment=PODMAN_SYSTEMD_UNIT=%n
@@ -405,18 +517,17 @@ ExecStart=/usr/bin/podman run \
 	-d \
 	--replace \
 	--name <app>-oauth2-proxy \
-	--network slirp4netns:allow_host_loopback=true \
-	-p <proxy-port>:4180 \
+	--pod-id-file %t/pod-<app>.pod-id \
+	--secret MY_APP_OAUTH2_CLIENT_SECRET,type=env,target=OAUTH2_PROXY_CLIENT_SECRET \
+	--secret MY_APP_OAUTH2_COOKIE_SECRET,type=env,target=OAUTH2_PROXY_COOKIE_SECRET \
 	-e OAUTH2_PROXY_PROVIDER=oidc \
 	-e OAUTH2_PROXY_OIDC_ISSUER_URL=<COmanage OIDCop issuer URL> \
 	-e OAUTH2_PROXY_CLIENT_ID=<client id, registered in COmanage> \
-	-e OAUTH2_PROXY_CLIENT_SECRET=<client secret> \
-	-e OAUTH2_PROXY_COOKIE_SECRET=<32-byte random string, `openssl rand -base64 32`> \
 	-e OAUTH2_PROXY_EMAIL_DOMAINS=* \
 	-e OAUTH2_PROXY_OIDC_GROUPS_CLAIM=groups \
 	-e OAUTH2_PROXY_ALLOWED_GROUPS=<app's one group — Tier 2 only, omit for 3a> \
 	-e OAUTH2_PROXY_PASS_USER_HEADERS=true \
-	-e OAUTH2_PROXY_UPSTREAMS=http://10.0.2.2:<app-port> \
+	-e OAUTH2_PROXY_UPSTREAMS=http://127.0.0.1:<app-port> \
 	-e OAUTH2_PROXY_HTTP_ADDRESS=0.0.0.0:4180 \
 	quay.io/oauth2-proxy/oauth2-proxy:<pinned version, e.g. v7.x.y>
 ExecStop=/usr/bin/podman stop --ignore --cidfile=%t/%n.ctr-id
@@ -434,10 +545,9 @@ Notes:
   [oauth2-proxy's releases](https://github.com/oauth2-proxy/oauth2-proxy/releases), not
   `latest` — it's a third-party image, so an unreviewed upstream release shouldn't reach the VM
   through auto-update.
-- `OAUTH2_PROXY_UPSTREAMS` points at `10.0.2.2:<app-port>` — same host-loopback address the
-  base deployment uses for reaching Postgres, since the app and oauth2-proxy are separate
-  containers, not sharing a network namespace, unless you choose to put them in the same
-  [pod](https://docs.podman.io/en/latest/markdown/podman-pod.1.html) instead.
+- `OAUTH2_PROXY_UPSTREAMS` points at `127.0.0.1:<app-port>`: the app is in the same pod. No
+  `-p` here — the pod's unit publishes `<public-port>:4180`, and that is the only way into the
+  pod.
 - `OAUTH2_PROXY_PASS_USER_HEADERS=true` is what makes oauth2-proxy forward
   `X-Forwarded-Groups` (and `X-Forwarded-User`, `X-Forwarded-Email`) to the app — without it,
   the app gets no group information at all.
@@ -451,6 +561,9 @@ Notes:
 
 ### Deploying OPA (Tiers 3a and 3b)
 
+Save this unit as `<app>-opa.service`. It runs in the app's pod (see
+[One pod per app](#one-pod-per-app-tiers-2-and-3)):
+
 ```service
 [Unit]
 Description=<app>-opa
@@ -458,6 +571,8 @@ Documentation=man:podman-generate-systemd(1)
 Wants=network-online.target
 After=network-online.target
 RequiresMountsFor=%t/containers
+BindsTo=pod-<app>.service
+After=pod-<app>.service
 
 [Service]
 Environment=PODMAN_SYSTEMD_UNIT=%n
@@ -471,10 +586,9 @@ ExecStart=/usr/bin/podman run \
 	-d \
 	--replace \
 	--name <app>-opa \
-	--network slirp4netns:allow_host_loopback=true \
-	-p 127.0.0.1:8181:8181 \
+	--pod-id-file %t/pod-<app>.pod-id \
 	docker.io/openpolicyagent/opa:<pinned version, e.g. 1.x.y> \
-	run --server --addr 0.0.0.0:8181 --bundle <bundle URL>
+	run --server --addr 127.0.0.1:8181 --bundle <bundle URL>
 ExecStop=/usr/bin/podman stop --ignore --cidfile=%t/%n.ctr-id
 ExecStopPost=/usr/bin/podman rm -f --ignore --cidfile=%t/%n.ctr-id
 Type=notify
@@ -489,8 +603,9 @@ Notes:
 - Pin the image to a specific release from
   [OPA's releases](https://github.com/open-policy-agent/opa/releases), not `latest`, for the
   same reason as oauth2-proxy above.
-- Bind OPA's port to `127.0.0.1` only — it's a local sidecar, never meant to be reachable
-  outside the VM. The app reaches it at `10.0.2.2:8181`, same host-loopback pattern as above.
+- No `-p`, and OPA listens on `127.0.0.1` only: it must be reachable by its own app and nothing
+  else. The app reaches it at `127.0.0.1:8181`, the default in `c3g-flask-opa` and
+  `c3g.shiny.authz`.
 - `--bundle <bundle URL>` is where OPA polls its policy from. `c3g-opa-policies` builds each
   app's bundle with `opa build -b <app-name>/ ... -o <app-name>-bundle.tar.gz` and publishes it
   to an internal bundle endpoint this VM can poll — point `--bundle` at that URL so policy
@@ -504,8 +619,9 @@ Notes:
 
 The base template's nginx config (`/etc/nginx/conf.d`) proxies straight to the app's port.
 That's still exactly right for **Tier 1** and **Tier 3b** apps — nginx never needs to know
-about auth for those. For **Tier 2** and **Tier 3a**, point `proxy_pass` at the oauth2-proxy
-container's port instead of the app's:
+about auth for those. (For Tier 3b, that port is the one the pod publishes.) For **Tier 2** and
+**Tier 3a**, point `proxy_pass` at oauth2-proxy's port, the one the pod publishes, instead of
+the app's:
 
 ```diff
    location / {
@@ -514,7 +630,7 @@ container's port instead of the app's:
      	proxy_set_header    X-Forwarded-For $proxy_add_x_forwarded_for;
      	proxy_set_header    X-Forwarded-Proto $scheme;
 -	proxy_pass  http://172.16.8.75:8080;
-+	proxy_pass  http://172.16.8.75:<proxy-port>;
++	proxy_pass  http://172.16.8.75:<public-port>;
  	proxy_read_timeout  20d;
      	proxy_buffering off;
    }
@@ -532,7 +648,8 @@ that means:
 
 - **No oauth2-proxy container** for this app — nginx proxies straight to it, same as a Tier-1
   app. The app validates Bearer tokens itself.
-- **One OPA container**, per the section above.
+- **A pod with the app and one OPA container**, per the sections above. The pod publishes the
+  app's port.
 - `pt_cli`, the CLI companion, talks to the app directly with a bearer token (device-code
   login against COmanage) — nothing for you to deploy for that; it's a client-side flow, not a
   service.
