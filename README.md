@@ -239,6 +239,16 @@ How apps actually run: each app is a container (podman), managed as a systemd us
 under the `genome` user on the shared webapp VM. No orchestration platform — just a process the
 OS supervises and restarts.
 
+**Pod**
+A group of containers that share one network, borrowed by podman from Kubernetes
+([podman docs](https://docs.podman.io/en/latest/markdown/podman-pod.1.html)). Containers in a
+pod reach each other at `127.0.0.1`, as if they ran on one machine, but each one keeps its own
+image, process and lifecycle: updating one doesn't restart the others. Nothing outside the pod
+can reach a port unless the pod publishes it. From Tier 2 up, each app gets its own pod holding
+the app and its oauth2-proxy and/or OPA containers, so only the app can reach its OPA, and only
+oauth2-proxy can reach an app that sits behind it. A Tier 1 app has no pod, just its one
+container.
+
 **Authn vs. authz**
 Two different questions, handed off at exactly one seam. *Authentication* is "who is this
 user" — COmanage's job, whether reached via oauth2-proxy or an app's own OIDC client.
