@@ -53,8 +53,10 @@ flowchart TB
     NGINX[nginx]
   end
   subgraph HOST["VM · webapp"]
-    OAUTH["oauth2-proxy<br/>--allowed-group"]
-    APP[App]
+    subgraph POD["pod · one per app"]
+      OAUTH["oauth2-proxy<br/>--allowed-group"]
+      APP[App]
+    end
   end
   CLIENT[Client] -->|HTTPS| NGINX
   NGINX -->|proxy_pass| OAUTH
@@ -72,9 +74,11 @@ flowchart TB
     NGINX[nginx]
   end
   subgraph HOST["VM · webapp"]
-    OAUTH[oauth2-proxy]
-    APP["App<br/>c3g-flask-opa"]
-    OPA[OPA sidecar]
+    subgraph POD["pod · one per app"]
+      OAUTH[oauth2-proxy]
+      APP["App<br/>c3g-flask-opa"]
+      OPA[OPA sidecar]
+    end
   end
   CLIENT[Client] -->|HTTPS| NGINX
   NGINX -->|proxy_pass| OAUTH
@@ -96,8 +100,10 @@ flowchart TB
   end
   subgraph HOST["VM · webapp"]
     OAUTH["oauth2-proxy<br/>not used here"]
-    APP["App<br/>c3g-oidc + c3g-flask-opa"]
-    OPA[OPA sidecar]
+    subgraph POD["pod · one per app"]
+      APP["App<br/>c3g-oidc + c3g-flask-opa"]
+      OPA[OPA sidecar]
+    end
   end
   CLIENT[Client] -->|HTTPS + Bearer token| NGINX
   NGINX -->|proxy_pass| APP
@@ -212,6 +218,9 @@ actually receives, on every request oauth2-proxy lets through, is a plain HTTP h
 `X-Forwarded-Groups` — with the user's groups already extracted from the ID token. The app
 reads a header, not a cookie.
 
+The app can trust that header only because nothing else can reach the app: oauth2-proxy and
+the app run in one podman pod, and the pod publishes only oauth2-proxy's port.
+
 **nginx**
 The shared edge reverse proxy, on its own VM, in front of every app. Terminates TLS
 (`*.c3g-app.sd4h.ca`) and routes each request to the right app on the webapp VM. Makes no
@@ -219,7 +228,7 @@ identity decisions itself.
 
 **OPA**
 [Open Policy Agent](https://www.openpolicyagent.org) — a policy engine run as a small sidecar
-process next to an app. Given a request's details (whatever an app chooses to send it — method,
+container in the app's own podman pod, so that app is the only thing that can reach it. Given a request's details (whatever an app chooses to send it — method,
 path, groups, an action name) it answers exactly one question: allow or deny. The rules
 themselves live as versioned policy files (Rego), separate from application code — see
 [c3g-opa-policies](https://github.com/c3g/c3g-opa-policies) (a private repo: real group names
@@ -253,7 +262,7 @@ place an access decision gets made — only where it gets asked for and acted on
 - [c3g-flask-opa](https://github.com/c3g/c3g-flask-opa) — the Flask `before_request` library
   described in [for-app-developers.md](./for-app-developers.md#flask) (`FlaskOPA`,
   `groups_header_from_request()`, `groups_header_from_g()`); its own test suite runs it
-  against a real OPA server loaded with `project_tracking`'s actual policy
+  against a real OPA server loaded with a generic example policy
 - [c3g-oidc](https://github.com/c3g/c3g-oidc) — the in-app OIDC client library described in
   [for-app-developers.md](./for-app-developers.md#flask) (`server/`, `client/`)
 - [c3g.shiny.authz](https://github.com/c3g/c3g.shiny.authz) — the R package described in
